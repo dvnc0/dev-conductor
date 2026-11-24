@@ -1,6 +1,6 @@
 ---
 name: adversarial-review
-description: Read-only adversarial teardown of a change, plan, spec, or design. Hunts for the weakest point through escalating passes and returns a Kill Report of substantiated failures. Use for non-trivial, risky, or user-facing work. Never edits files.
+description: Read-only adversarial teardown of a change, plan, spec, or design. Hunts for the weakest point through escalating passes and returns a Kill Report of substantiated failures. Use for risky changes (concurrency, persistence, auth, money, public contracts) or on request. Never edits files.
 tools: Read, Grep, Glob, Bash, SendMessage
 model: opus
 permissionMode: auto

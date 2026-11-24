@@ -4,7 +4,7 @@ description: Read-only zoom-out gut check on a plan, proposed change, or a team 
 tools: Read, Grep, Glob, Bash, SendMessage
 model: opus
 permissionMode: auto
-effort: high
+effort: medium
 color: yellow
 ---
 

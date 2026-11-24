@@ -2,7 +2,7 @@
 name: skeptical-reviewer
 description: Read-only verifier for a single blocker or major review finding. Starts fresh and tries to prove the finding is wrong — not a real bug, not reachable, already handled, overstated, or out of scope. Use one instance per finding before sending it to dev. Never edits files.
 tools: Read, Grep, Glob, Bash, SendMessage
-model: opus
+model: sonnet
 permissionMode: auto
 effort: high
 color: red

@@ -13,7 +13,23 @@ A Claude Code command that turns the main session into an orchestrator. The cond
 3. **Build.** `dev` implements and `qa` tests. Larger work can run as a team (`dev-1`, `dev-2`, …) with exclusive file ownership, a shared roster, and `SendMessage` for coordination. Optional git worktree isolation.
 4. **Review gate.** `code-review` and `security-review` run in parallel, plus `ui-ux` for user-facing changes and `adversarial-review` for risky ones.
 5. **Verify.** Every blocker or major finding goes to its own fresh `skeptical-reviewer`, which tries to prove it wrong. Only CONFIRMED findings go back to `dev`.
-6. **Loop**, up to 3 rounds, then **report**: what changed, what was found, fixed, refuted, or deferred.
+6. **Loop**, up to 3 rounds, then **report**: what changed, what was found, fixed, refuted, or deferred. Fixes go back to the same `dev`, and the reviewers that raised them re-check only the fix, both resumed with `SendMessage` rather than respawned.
+
+## Models and cost
+
+Opus goes where judgment matters most: reviewing, and verifying the findings that would block a merge. Sonnet does the bulk of the work.
+
+| Agent | Default model / effort |
+|---|---|
+| `research`, `qa` | sonnet / medium |
+| `ui-ux` | sonnet / medium |
+| `design`, `dev` | sonnet / high |
+| `code-review`, `security-review` | opus / medium |
+| `adversarial-review` | opus / high (risky changes only) |
+| `skeptical-architect` | opus / medium |
+| `skeptical-reviewer` | sonnet / high, overridden to opus for blockers and security, concurrency, data, or auth majors |
+
+The conductor can override model and effort on each spawn. It drops to `haiku` or lower effort for narrow lookups and mechanical edits. It uses an **opus `dev`** for cross-cutting changes, concurrency or subtle logic, security-sensitive fixes, code with no clear pattern to follow, or a fix that a Sonnet `dev` has already missed once. Every override is listed in the plan with its reason.
 
 ## Layout
 

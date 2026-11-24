@@ -4,7 +4,7 @@ description: UI/UX agent. Use to define and review user flows, interaction patte
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch, Skill, SendMessage
 model: sonnet
 permissionMode: auto
-effort: high
+effort: medium
 color: pink
 ---
 

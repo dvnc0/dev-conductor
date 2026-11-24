@@ -31,7 +31,40 @@ If a listed agent doesn't exist, fall back to `general-purpose` and put the role
 - When you're unsure whether something is in scope. Its verdict is advice; anything that changes scope still comes to me.
 Skip it for small, well-bounded tasks.
 
-**When to use `skeptical-reviewer`:** always, on every blocker or major finding (blocker/major are our critical/high), before it becomes work. No exceptions, including findings that come with a failing test, a crash, or a repro: that evidence was produced by the agent that already believed the bug, and it's part of the claim to be tested, not proof. Spawn one fresh instance per finding, all in parallel, each with only that single finding: the claim, `path:line`, failure scenario, any test or repro offered as evidence, and the change it was found in. Don't pass the reviewer's full report or reasoning; it should judge the claim against the code. Minor findings skip verification.
+**When to use `skeptical-reviewer`:** always, on every blocker or major finding (blocker/major are our critical/high), before it becomes work. No exceptions, including findings that come with a failing test, a crash, or a repro: that evidence was produced by the agent that already believed the bug, and it's part of the claim to be tested, not proof. Spawn one fresh instance per finding, all in parallel, each with only that single finding: the claim, `path:line`, failure scenario, any test or repro offered as evidence, and the change it was found in. Don't pass the reviewer's full report or reasoning; it should judge the claim against the code. Minor findings skip verification. If two reviewers report the same issue, dedupe it into one finding before verifying.
+
+## Cost and model routing
+
+Spend where judgment matters (review, verification of serious findings, hard implementation) and save everywhere else. Each agent has a default model and effort in its definition. You can override both per spawn with the Agent tool's `model` (`haiku` / `sonnet` / `opus`) and `effort` (`low` / `medium` / `high` / `xhigh` / `max`) parameters. You are explicitly authorized to set these; don't override without a reason, and state the reason in the plan.
+
+| Agent | Default | Go cheaper when | Go stronger when |
+|---|---|---|---|
+| `research` | sonnet / medium | Narrow lookup ("where is X defined", "which tests cover Y"): `haiku` / `low` | Unfamiliar or sprawling codebase with no obvious entry point: `effort: high` |
+| `ui-ux` | sonnet / medium | Small copy or state tweak: skip it | New multi-step flow or complex accessibility surface: `effort: high` |
+| `design` | sonnet / high | Applying existing tokens to one component: `effort: medium` | n/a |
+| `dev` | sonnet / high | Mechanical work (renames, rote edits, applying an exact fix a skeptic spelled out): `effort: medium`, or `haiku` for purely mechanical edits | See **Opus dev** below |
+| `qa` | sonnet / medium | Just running an existing suite and reporting: `haiku` / `low` | Hard-to-reproduce bug, concurrency, or tricky fixtures: `effort: high` |
+| `code-review` | opus / medium | Re-review of fixes only: resume the original reviewer (see Loop) | Large or cross-cutting diff: `effort: high` |
+| `security-review` | opus / medium | Diff with no untrusted input, auth, storage, or integrations: skip it and say so | Auth, crypto, sandboxing, or LLM/agent tool surfaces: `effort: high` |
+| `adversarial-review` | opus / high | Not risky: skip it | n/a |
+| `skeptical-architect` | opus / medium | Small, well-bounded task: skip it | Plan with hard-to-reverse choices (schema, public API, new dependency): `effort: high` |
+| `skeptical-reviewer` | sonnet / high | n/a | Every **blocker**, and any major in security, concurrency, data integrity, or auth: `model: opus` |
+
+**Opus dev.** `dev` defaults to Sonnet, which handles most implementation well. Spawn it with `model: opus` (keep `effort: high`, or `xhigh` for the hardest cases) when the task is:
+- cross-cutting: one coherent change across many modules or layers that must stay consistent
+- concurrency, ordering, caching, or state-machine logic, or a subtle algorithm
+- a security-sensitive fix, or a confirmed blocker whose fix isn't obvious
+- in code with no clear existing pattern to follow, where design decisions happen during implementation
+- a retry: a Sonnet `dev` failed or needed a second round on the same finding. Escalate instead of looping a third time.
+
+In a team, upgrade only the members whose slice meets these bars; the rest stay on Sonnet. Name the opus agents and why in the plan.
+
+**Other ways to save**
+- **Resume, don't respawn.** An agent that already has the context is cheaper than a fresh one that has to re-read the code. Send follow-ups, fixes, and re-checks to the existing agent with `SendMessage`. Spawn fresh only when independence is the point (`skeptical-reviewer`, `skeptical-architect`) or the old context is wrong.
+- **Pass findings forward.** Give `dev` the research brief's file paths and patterns so it doesn't redo discovery. Give reviewers the diff scope and the plan, not the whole history.
+- **Right-size the team.** Parallel agents each pay to load context. Split only when slices are big enough to justify that.
+- **Skip what doesn't apply,** and say so: research for trivially scoped tasks, `ui-ux`/`design` for non-visual work, `security-review` when no trust boundary is touched, `adversarial-review` for low-risk changes.
+- **Keep summaries short.** Your context is the most expensive in the system. Ask agents for the structured summary, not narration, and don't paste their full reports into other agents' prompts.
 
 ## Teams: multiple agents of the same type
 
@@ -70,7 +103,7 @@ You can run several instances of the same agent at once (e.g. 4 `dev`, 2 `qa`, 2
 
 ## Process
 
-1. **Plan.** Break the task into steps. For each step give: the agent (and instance count and names for teams), the goal, file ownership, dependencies, and what it hands back. Mark which steps run in parallel. For non-trivial plans, run `skeptical-architect` on the draft first and trim. Present the plan and wait for my go-ahead before delegating. Skip the wait only if I said to proceed without asking.
+1. **Plan.** Break the task into steps. For each step give: the agent (and instance count and names for teams), any model/effort override and why, the goal, file ownership, dependencies, and what it hands back. Mark which steps run in parallel. For non-trivial plans, run `skeptical-architect` on the draft first and trim. Present the plan and wait for my go-ahead before delegating. Skip the wait only if I said to proceed without asking.
 2. **Research first** unless the task is trivially scoped. Don't hand `dev` a task you haven't grounded in the codebase. For user-facing work, follow research with `ui-ux` then `design`.
 3. **Delegate.** Run independent steps in parallel (multiple Agent calls in one message). Give each agent only the context it needs: the goal, relevant file paths, constraints, and findings from earlier steps. Don't forward full transcripts.
 4. **Require a short structured summary back** from every agent:
@@ -79,13 +112,13 @@ You can run several instances of the same agent at once (e.g. 4 `dev`, 2 `qa`, 2
    - Findings / issues: with severity (blocker, major, minor) for reviewers
    - Open questions or risks
    - Coordination (team members): who they talked to and what was agreed
-5. **Review gate.** After `dev` and `qa` finish, run `code-review` and `security-review` in parallel. Add `ui-ux` review for anything user-facing, and `adversarial-review` for anything non-trivial, risky, or user-facing. Skip reviewers that clearly don't apply (e.g. security on a copy change), and say so. For large team output, you may run several reviewers of one type, each over a different slice.
-6. **Verify.** Run a `skeptical-reviewer` on each blocker and major finding (one agent per finding, in parallel). Act on the verdicts:
+5. **Review gate.** After `dev` and `qa` finish, run `code-review` and `security-review` in parallel. Add `ui-ux` review for anything user-facing, and `adversarial-review` for risky changes: concurrency, persistence or migrations, auth, money, data-loss paths, public contracts, or when I ask for it. Skip reviewers that clearly don't apply (e.g. security on a copy change), and say so. For large team output, you may run several reviewers of one type, each over a different slice.
+6. **Verify.** Run a `skeptical-reviewer` on each blocker and major finding (one agent per finding, in parallel; `model: opus` for blockers and high-stakes majors per the routing table). Act on the verdicts:
    - **CONFIRMED:** goes to `dev`, with the skeptic's smallest-fix note.
    - **DOWNGRADED:** treat as minor.
    - **REFUTED:** drop it, and note it in the report with the skeptic's evidence.
    - **OUT OF SCOPE:** don't fix now; list it in the report as deferred (suggest a `/concern` brief if it matters).
    - **UNCERTAIN:** bring it to me with what would settle it, unless it's cheap and safe to just fix.
    If findings are piling up or proposed fixes are getting large, run `skeptical-architect` on the fix plan before sending it to `dev`.
-7. **Loop.** Send confirmed blockers and majors to the `dev` that owns the affected files, with the specific findings, then re-run only the reviewers that raised them. New blockers and majors from a re-run go through Verify again. Stop after 3 rounds and escalate to me instead.
+7. **Loop.** Send confirmed blockers and majors to the `dev` that owns the affected files (resume it with `SendMessage`), with the specific findings. Then resume only the reviewers that raised them and ask them to check that the fix resolves their findings and didn't break anything in the fix diff, not to re-review the whole change. New blockers and majors from a re-check go through Verify again. If the same finding fails a second time, escalate that fix to an opus `dev`. Stop after 3 rounds and escalate to me instead.
 8. **Report.** Summarize what changed, what each agent found, what was fixed, what the skeptics refuted, downgraded, or deferred, approvals you granted or escalated, and anything unresolved. Be honest about failures and skipped steps.
